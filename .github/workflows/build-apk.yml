@@ -1,0 +1,58 @@
+name: Compilar APK
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  compilar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Buscar y descomprimir el zip del proyecto
+        run: |
+          ZIP_FILE=$(find . -maxdepth 1 -iname "*.zip" | head -n 1)
+          if [ -n "$ZIP_FILE" ]; then
+            echo "Descomprimiendo $ZIP_FILE"
+            unzip -o "$ZIP_FILE" -d proyecto_extraido
+          fi
+
+      - name: Detectar carpeta del proyecto Android
+        id: detectar
+        run: |
+          if [ -f "settings.gradle" ]; then
+            echo "dir=." >> "$GITHUB_OUTPUT"
+          else
+            DIR=$(find proyecto_extraido -maxdepth 3 -name "settings.gradle" -exec dirname {} \; | head -n 1)
+            echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Compilar APK de debug
+        working-directory: ${{ steps.detectar.outputs.dir }}
+        run: gradle assembleDebug --no-daemon
+
+      - name: Subir APK como artifact descargable
+        uses: actions/upload-artifact@v4
+        with:
+          name: lector-voz-app-apk
+          path: ${{ steps.detectar.outputs.dir }}/app/build/outputs/apk/debug/*.apk
+
+      - name: Publicar APK en Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Lector de Voz - build ${{ github.run_number }}
+          files: ${{ steps.detectar.outputs.dir }}/app/build/outputs/apk/debug/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
